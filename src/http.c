@@ -298,7 +298,7 @@ cleanup:
         (*(fa_http_client_connect_cb_t)client->connect_cb)(client, &error);
 
         return;
-    } else {
+    } else if (!strcmp(client->url->schema, "http")) {
         // Start monitoring for responses
         r = uv_read_start(req->handle, *fa__http_client_alloc_cb, *fa__http_client_read_cb);
 
@@ -317,6 +317,13 @@ cleanup:
 
         // Connected and ready for write
         (*(fa_http_client_connect_cb_t)client->connect_cb)(client, NULL);
+    } else {
+        fa_http_client_err_t error = {
+            .type = FA_HC_E_UNSUPPORTEDSCHEMA,
+            .code = 0
+        };
+
+        (*(fa_http_client_connect_cb_t)client->connect_cb)(client, &error);
     }
 }
 

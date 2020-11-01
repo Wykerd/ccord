@@ -67,7 +67,8 @@ enum fa_http_client_error_type {
     FA_HC_E_UVWRITE,
     FA_HC_E_PARSE, // llhttp parse error
     FA_HC_E_INVALIDURL,
-    FA_HC_E_UPGRADE // A protovol upgrade was made but no upgrade_cb was set
+    FA_HC_E_UPGRADE, // A protovol upgrade was made but no upgrade_cb was set
+    FA_HC_E_UNSUPPORTEDSCHEMA // the http client only supports http and https schemas!
 };
 
 typedef struct fa_http_client_err_s {
