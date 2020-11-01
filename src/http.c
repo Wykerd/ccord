@@ -78,8 +78,6 @@ static void fa__http_client_read_cb (uv_stream_t *tcp, ssize_t nread, const uv_b
         }
     } else {
         if (nread != UV_EOF) {
-            printf("Error: uv_read_cb\n");
-
             fa_http_client_err_t error = {
                 .type = FA_HC_E_UVREAD,
                 .code = nread
@@ -170,7 +168,6 @@ static void fa__http_client_tls_handshake_cb (uv_idle_t* handle) {
 
         return;
     } else {
-        puts("Shook Hands");
         uv_idle_stop(handle);
         // now we are connected and ready to receive data
         uv_idle_init(client->loop, &client->https->hread);
@@ -189,10 +186,7 @@ static void fa__http_client_tcp_connect_cb (
 ) {
     fa_http_client_t *client = req->data;
 
-    puts("CONNECTED");
     if (status != 0) {
-        puts("Error: uv_connect_cb");
-
         fa_http_client_err_t error = {
             .type = FA_HC_E_UVCONNECT,
             .code = status
@@ -211,7 +205,6 @@ static void fa__http_client_tcp_connect_cb (
     int r;
 
     if (!strcmp(client->url->schema, "https")) {
-        puts("TLS");
         client->https = malloc(sizeof(fa_https_client_t));
         memset(client->https, 0, sizeof(fa_https_client_t));
 
@@ -253,8 +246,6 @@ static void fa__http_client_tcp_connect_cb (
 
         uv_idle_start(&client->https->hhandshake, fa__http_client_tls_handshake_cb);
 
-        puts("Handshake handoff");
-
         return;
 cleanup:
         uv_read_stop(req->handle);
@@ -268,13 +259,10 @@ cleanup:
 
         return;
     } else {
-        puts("PLAIN TEXT");
         // Start monitoring for responses
         r = uv_read_start(req->handle, *fa__http_client_alloc_cb, *fa__http_client_read_cb);
 
         if (r != 0) {
-            puts("Error: uv_read_start");
-
             uv_read_stop(req->handle);
 
             fa_http_client_err_t error = {
@@ -300,8 +288,6 @@ static void fa__http_client_tcp_connect (
 
     r = uv_tcp_init(client->loop, &client->tcp);
     if (r != 0) {
-        puts("Error: uv_tcp_init");
-
         fa_http_client_err_t error = {
             .type = FA_HC_E_UVTCPINIT,
             .code = r
@@ -312,16 +298,12 @@ static void fa__http_client_tcp_connect (
         return;
     };
 
-    puts("INIT");
-
     client->tcp.data = client;
     client->connect_req.data = client;
 
     r = uv_tcp_connect(&client->connect_req, &client->tcp, addr, *fa__http_client_tcp_connect_cb);
 
     if (r != 0) {
-        puts("Error: uv_tcp_connect\n");
-
         fa_http_client_err_t error = {
             .type = FA_HC_E_UVCONNECTREQ,
             .code = r
@@ -338,10 +320,7 @@ static void fa__http_client_getaddrinfo_cb (
     int status,
     struct addrinfo* res
 ) {
-    puts("GOT ADDR");
     if (status < 0) {
-        puts("getaddr error");
-
         fa_http_client_t *client = req->data;
 
         fa_http_client_err_t error = {
@@ -356,13 +335,10 @@ static void fa__http_client_getaddrinfo_cb (
 
     fa__http_client_tcp_connect(req->data, res->ai_addr);
 
-    puts("FREED ADDRINFO");
-
     uv_freeaddrinfo(res);
 }
 
 int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb) {
-    puts("START");
     client->connect_cb = connect_cb;
     client->err_cb = err_cb;
     client->close_cb = close_cb;
@@ -383,8 +359,6 @@ int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_
     int r = uv_ip4_addr(client->url->host, atoi(client->url->port), &dest);
 
     if (r != 0) {
-        puts("FETCHING ADDR");
-
         client->getaddrinfo_req.data = client;
 
         struct addrinfo hints;
@@ -393,9 +367,6 @@ int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = IPPROTO_TCP;
-
-
-        puts("OK GETTING");
 
         uv_getaddrinfo(
             client->loop,
@@ -408,8 +379,6 @@ int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_
     } else {
         fa__http_client_tcp_connect(client, (struct sockaddr *)&dest);
     }
-
-    puts("EXIT CONNECT INIT");
 }
 
 void fa_http_client_set_url (fa_http_client_t *client, const char* url) {
@@ -420,8 +389,6 @@ static void fa__http_client_write_cb (uv_write_t* req, int status) {
     fa__http_client_write_data_t *write_data = req->data;
 
     if (status != 0) {
-        puts("Error: uv_write_cb");
-
         fa_http_client_err_t error = {
             .type = FA_HC_E_UVWRITE,
             .code = status
