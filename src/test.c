@@ -38,6 +38,14 @@ void client_close_cb (fa_http_client_t *client) {
     puts("Stream closed");
 }
 
+int on_message_complete (llhttp_t* parser) {
+    puts("\n-- MESSAGE COMPLETE\n");
+
+    // client_connect_cb(parser->data, NULL);
+
+    return 0;
+}
+
 int main () {
     gnutls_global_init();
 
@@ -50,8 +58,11 @@ int main () {
     fa_http_client_init(loop, &client);
 
     client.parser_settings.on_body = *on_body_recv;
+    client.parser_settings.on_message_complete = *on_message_complete;
 
-    fa_http_client_connect (&client, url_raw, *client_connect_cb, *client_err_cb, *client_close_cb);
+    fa_http_client_set_url(&client, url_raw);
+
+    fa_http_client_connect (&client, *client_connect_cb, *client_err_cb, *client_close_cb);
 
     uv_run(loop, UV_RUN_DEFAULT);
 }

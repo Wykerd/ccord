@@ -64,7 +64,8 @@ enum fa_http_client_error_type {
     FA_HC_E_UVCONNECT, // thrown by uv_connect_cb
     FA_HC_E_UVWRITEREQ,
     FA_HC_E_UVWRITE,
-    FA_HC_E_PARSE // llhttp parse error
+    FA_HC_E_PARSE, // llhttp parse error
+    FA_HC_E_INVALIDURL
 };
 
 typedef struct fa_http_client_err_s {
@@ -82,8 +83,9 @@ typedef void (*fa_http_client_close_cb_t)(fa_http_client_t *client);
 
 int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client);
 void fa_http_client_shutdown (uv_shutdown_t *shutdown, fa_http_client_t *client, uv_shutdown_cb cb);
-int fa_http_client_connect (fa_http_client_t *client, const char* url, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb);
+int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb);
 int fa_http_client_write (fa_http_client_t *client, uv_buf_t *buf, fa_http_client_write_cb_t write_cb);
+void fa_http_client_set_url (fa_http_client_t *client, const char* url);
 
 
 #ifdef __cplusplus

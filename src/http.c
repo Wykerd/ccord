@@ -361,13 +361,22 @@ static void fa__http_client_getaddrinfo_cb (
     uv_freeaddrinfo(res);
 }
 
-int fa_http_client_connect (fa_http_client_t *client, const char* url, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb) {
+int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb) {
     puts("START");
     client->connect_cb = connect_cb;
     client->err_cb = err_cb;
     client->close_cb = close_cb;
 
-    client->url = fa_parse_url(url, strlen(url));
+    if (client->url == NULL) {
+        fa_http_client_err_t error = {
+            .type = FA_HC_E_INVALIDURL,
+            .code = 0
+        };
+
+        (*(fa_http_client_connect_cb_t)client->connect_cb)(client, &error);
+
+        return;
+    }
 
     struct sockaddr_in dest;
 
@@ -401,6 +410,10 @@ int fa_http_client_connect (fa_http_client_t *client, const char* url, fa_http_c
     }
 
     puts("EXIT CONNECT INIT");
+}
+
+void fa_http_client_set_url (fa_http_client_t *client, const char* url) {
+    client->url = fa_parse_url(url, strlen(url));
 }
 
 static void fa__http_client_write_cb (uv_write_t* req, int status) {
