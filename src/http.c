@@ -24,6 +24,8 @@ int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client) {
     llhttp_settings_init(&client->parser_settings);
     llhttp_init(&client->parser, HTTP_RESPONSE, &client->parser_settings);
     client->parser.data = client;
+    client->settings.keep_alive = 0;
+    client->settings.keep_alive_secs = 1;
     return 0;
 };
 
@@ -200,6 +202,11 @@ static void fa__http_client_tcp_connect_cb (
 
         return;
     };
+
+    // Keep alive
+    if (client->settings.keep_alive) {
+        uv_tcp_keepalive(&client->tcp, 1, client->settings.keep_alive_secs);
+    }
 
     int r;
 

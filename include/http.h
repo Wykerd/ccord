@@ -25,6 +25,11 @@ typedef struct fa_https_client_s {
     uv_prepare_t hwrite;
 } fa_https_client_t;
 
+typedef struct fa_http_client_settings_s {
+    int keep_alive; // default is 0 (false)
+    unsigned int keep_alive_secs; // default is 1 (second)
+} fa_http_client_settings_t;
+
 typedef struct fa_http_client_s {
     /* HTTP Parser */
     llhttp_t parser;
@@ -45,6 +50,8 @@ typedef struct fa_http_client_s {
     fa_url_t *url;
     /* Data */
     void *data;
+    /* Settings */
+    fa_http_client_settings_t settings;
 } fa_http_client_t;
 
 enum fa_http_client_error_type {
