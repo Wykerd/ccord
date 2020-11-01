@@ -39,6 +39,8 @@ typedef struct fa_http_client_s {
     uv_connect_t connect_req;
     /* Callbacks */
     void* connect_cb;
+    void* err_cb;
+    void* close_cb;
     /* URL */
     fa_url_t *url;
     /* Data */
@@ -48,12 +50,14 @@ typedef struct fa_http_client_s {
 enum fa_http_client_error_type {
     FA_HC_E_GNUTLS,
     FA_HC_E_UVREADSTART,
+    FA_HC_E_UVREAD,
     FA_HC_E_GETADDRINFO, // Error code: See UV_EIA_*
     FA_HC_E_UVTCPINIT,
     FA_HC_E_UVCONNECTREQ, // could not queue connect with uv_tcp_connect
     FA_HC_E_UVCONNECT, // thrown by uv_connect_cb
     FA_HC_E_UVWRITEREQ,
-    FA_HC_E_UVWRITE
+    FA_HC_E_UVWRITE,
+    FA_HC_E_PARSE // llhttp parse error
 };
 
 typedef struct fa_http_client_err_s {
@@ -65,9 +69,13 @@ typedef void (*fa_http_client_connect_cb_t)(fa_http_client_t *client, fa_http_cl
 
 typedef void (*fa_http_client_write_cb_t)(fa_http_client_t *client, fa_http_client_err_t *error);
 
+typedef void (*fa_http_client_err_cb_t)(fa_http_client_t *client, fa_http_client_err_t *error);
+
+typedef void (*fa_http_client_close_cb_t)(fa_http_client_t *client);
+
 int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client);
 void fa_http_client_shutdown (uv_shutdown_t *shutdown, fa_http_client_t *client, uv_shutdown_cb cb);
-int fa_http_client_connect (fa_http_client_t *client, const char* url, fa_http_client_connect_cb_t connect_cb);
+int fa_http_client_connect (fa_http_client_t *client, const char* url, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb);
 int fa_http_client_write (fa_http_client_t *client, uv_buf_t *buf, fa_http_client_write_cb_t write_cb);
 
 

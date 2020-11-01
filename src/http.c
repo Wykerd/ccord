@@ -57,17 +57,40 @@ static void fa__http_client_alloc_cb (
 }
 
 static void fa__http_client_read_cb (uv_stream_t *tcp, ssize_t nread, const uv_buf_t * buf) {
-    fa_http_client_t *http_client = tcp->data;
+    fa_http_client_t *client = tcp->data;
 
     ssize_t parsed;
-    // LOGI("read/buf ", nread, "/", buf->len);
+
     if (nread > 0) {
-        // TODO error handling
-        llhttp_execute(&http_client->parser, buf->base, nread);
+        llhttp_errno_t err = llhttp_execute(&client->parser, buf->base, nread);
+        if (err != HPE_OK) {
+            fa_http_client_err_t error = {
+                .type = FA_HC_E_PARSE,
+                .code = err
+            };
+
+            // kill reading
+            uv_read_stop(tcp);
+
+            (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
+        }
     } else {
         if (nread != UV_EOF) {
             printf("Error: uv_read_cb\n");
-            return;
+
+            fa_http_client_err_t error = {
+                .type = FA_HC_E_UVREAD,
+                .code = nread
+            };
+
+            // kill reading
+            uv_read_stop(tcp);
+
+            (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
+        } else {
+            // kill reading
+            uv_read_stop(tcp);
+            (*(fa_http_client_close_cb_t)client->close_cb)(client);
         }
     }
 
@@ -86,18 +109,41 @@ static void fa__http_client_tls_read_cb (uv_idle_t* handle) {
     if (rval == GNUTLS_E_AGAIN || rval == GNUTLS_E_INTERRUPTED) return;
 
     if (rval > 0) {
-        // TODO error handling
-        llhttp_execute(&client->parser, client->https->recv_buf, rval);
+        llhttp_errno_t err = llhttp_execute(&client->parser, client->https->recv_buf, rval);
+        if (err != HPE_OK) {
+            fa_http_client_err_t error = {
+                .type = FA_HC_E_PARSE,
+                .code = err
+            };
+
+            // kill reading
+            uv_idle_stop(handle);
+
+            (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
+        }
     } else if (rval < 0 && gnutls_error_is_fatal(rval) == 0) {
         fprintf(stderr, "*** Warning: %s\n", gnutls_strerror(rval));
+        goto clean_close;
     } else if (rval < 0) {
-        // TODO
         fprintf(stderr, "*** Error: %s\n", gnutls_strerror(rval));
-        exit(1);
+            
+        fa_http_client_err_t error = {
+            .type = FA_HC_E_GNUTLS,
+            .code = rval
+        };
+
+        // kill reading
+        uv_idle_stop(handle);
+
+        (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
     } else if (rval == 0) {
-        // TODO
-        printf("- Peer has closed the TLS connection\n");
-        exit(1);
+        fprintf(stderr, "- Peer has closed the TLS connection\n");
+
+clean_close: 
+        // kill reading
+        uv_idle_stop(handle);
+
+        (*(fa_http_client_close_cb_t)client->close_cb)(client);
     };
 }
 
@@ -308,9 +354,11 @@ static void fa__http_client_getaddrinfo_cb (
     uv_freeaddrinfo(res);
 }
 
-int fa_http_client_connect (fa_http_client_t *client, const char* url, fa_http_client_connect_cb_t connect_cb) {
+int fa_http_client_connect (fa_http_client_t *client, const char* url, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb) {
     puts("START");
     client->connect_cb = connect_cb;
+    client->err_cb = err_cb;
+    client->close_cb = close_cb;
 
     client->url = fa_parse_url(url, strlen(url));
 
