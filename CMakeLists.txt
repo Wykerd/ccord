@@ -4,10 +4,14 @@ project(ccord LANGUAGES C)
 
 message(STATUS "Building with ${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION} on ${CMAKE_SYSTEM} for platform ${CMAKE_SYSTEM_NAME}")
 
-add_executable(ccord
+add_library(ccord SHARED
     src/http.c
     src/url_parser.c
     src/url.c
+)
+
+add_executable(ccord-test
+    src/test.c
 )
 
 target_include_directories(ccord PUBLIC 
@@ -32,4 +36,8 @@ message(STATUS "Found libuv: ${UV_PATH}")
 
 target_link_libraries(ccord GnuTLS::GnuTLS ${UV_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/deps/llhttp/build/libllhttp.a)
 
+target_link_libraries(ccord-test ccord ${UV_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/deps/llhttp/build/libllhttp.a)
+
 add_dependencies(ccord llhttp)
+
+add_dependencies(ccord-test ccord)
