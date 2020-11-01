@@ -46,6 +46,7 @@ typedef struct fa_http_client_s {
     void* connect_cb;
     void* err_cb;
     void* close_cb;
+    void* upgrade_cb;
     /* URL */
     fa_url_t *url;
     /* Data */
@@ -65,7 +66,8 @@ enum fa_http_client_error_type {
     FA_HC_E_UVWRITEREQ,
     FA_HC_E_UVWRITE,
     FA_HC_E_PARSE, // llhttp parse error
-    FA_HC_E_INVALIDURL
+    FA_HC_E_INVALIDURL,
+    FA_HC_E_UPGRADE // A protovol upgrade was made but no upgrade_cb was set
 };
 
 typedef struct fa_http_client_err_s {
@@ -80,6 +82,8 @@ typedef void (*fa_http_client_write_cb_t)(fa_http_client_t *client, fa_http_clie
 typedef void (*fa_http_client_err_cb_t)(fa_http_client_t *client, fa_http_client_err_t *error);
 
 typedef void (*fa_http_client_close_cb_t)(fa_http_client_t *client);
+
+typedef void (*fa_http_client_upgrade_cb_t)(fa_http_client_t *client);
 
 int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client);
 void fa_http_client_shutdown (uv_shutdown_t *shutdown, fa_http_client_t *client, uv_shutdown_cb cb);

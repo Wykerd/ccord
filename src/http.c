@@ -76,6 +76,26 @@ static void fa__http_client_read_cb (uv_stream_t *tcp, ssize_t nread, const uv_b
 
             (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
         }
+
+        if (client->parser.upgrade == 1) {
+            // A protocol upgrade has occurred! Lets notify and switch if possible
+            if (client->upgrade_cb != NULL) {
+                // kill the reading - this must be resumed in the callback
+                uv_read_stop(tcp);
+                
+                (*(fa_http_client_upgrade_cb_t)client->upgrade_cb)(client);
+            } else {
+                fa_http_client_err_t error = {
+                    .type = FA_HC_E_UPGRADE,
+                    .code = 0
+                };
+
+                // kill reading
+                uv_read_stop(tcp);
+
+                (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
+            }
+        }
     } else {
         if (nread != UV_EOF) {
             fa_http_client_err_t error = {
@@ -120,6 +140,26 @@ static void fa__http_client_tls_read_cb (uv_idle_t* handle) {
             uv_idle_stop(handle);
 
             (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
+        }
+
+        if (client->parser.upgrade == 1) {
+            // A protocol upgrade has occurred! Lets notify and switch if possible
+            if (client->upgrade_cb != NULL) {
+                // kill the reading - this must be resumed in the callback
+                uv_idle_stop(handle);
+                
+                (*(fa_http_client_upgrade_cb_t)client->upgrade_cb)(client);
+            } else {
+                fa_http_client_err_t error = {
+                    .type = FA_HC_E_UPGRADE,
+                    .code = 0
+                };
+
+                // kill reading
+                uv_idle_stop(handle);
+
+                (*(fa_http_client_err_cb_t)client->err_cb)(client, &error);
+            }
         }
     } else if (rval < 0 && gnutls_error_is_fatal(rval) == 0) {
         fprintf(stderr, "*** Warning: %s\n", gnutls_strerror(rval));
