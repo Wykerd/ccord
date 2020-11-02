@@ -8,14 +8,14 @@
     ptr[u.field_data[f].len] = 0
 
 fa_url_t *fa_parse_url (const char* buf, size_t buflen) {
-    fa_url_t *url;
-    url = malloc(sizeof(fa_url_t));
-
     struct http_parser_url u;
     http_parser_url_init(&u);
     if (http_parser_parse_url(buf, buflen, 0, &u)) {
         return NULL;
     };
+
+    fa_url_t *url;
+    url = malloc(sizeof(fa_url_t));
     
     URL_ASSIGN(url->schema, UF_SCHEMA);
     URL_ASSIGN(url->host, UF_HOST);
@@ -23,12 +23,9 @@ fa_url_t *fa_parse_url (const char* buf, size_t buflen) {
     URL_ASSIGN(url->userinfo, UF_USERINFO);
     URL_ASSIGN(url->fragment, UF_FRAGMENT);
 
-    URL_ASSIGN(url->schema, UF_SCHEMA);
-
     if (!u.field_data[UF_PORT].len) {
         url->port = calloc(sizeof(char), 6);
 
-        // TODO: Default ports for protocols
         if (!strcmp(url->schema, "http")) {
             strcpy(url->port, "80");
         } else if (!strcmp(url->schema, "https")) {

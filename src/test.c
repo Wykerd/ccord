@@ -19,7 +19,7 @@ void write_cb (fa_http_client_t *client, fa_http_client_err_t *error) {
 }
 
 void client_connect_cb (fa_http_client_t *client, fa_http_client_err_t *err) {
-    if (err != NULL) printf("Status %d\n", err->code);
+    if (err != NULL) printf("Status %ld\n", err->code);
     else puts("Connected");
 
     fa_http_request_t *req = fa_http_request_init(client, "GET");
@@ -37,12 +37,29 @@ void client_connect_cb (fa_http_client_t *client, fa_http_client_err_t *err) {
     fa_http_client_write (client, resbuf, *write_cb);
 }
 
+void free_cb (uv_shutdown_t* req, int status) {
+    free(req->data);
+    free(req);
+    puts("Shutdown\n");
+};
+
 void client_err_cb (fa_http_client_t *client, fa_http_client_err_t *err) {
+    uv_shutdown_t *sd = malloc(sizeof(uv_shutdown_t));
+
+    sd->data = client;
+
+    fa_http_client_shutdown(sd, client, *free_cb);
+
     puts("An error occurred");
 }
 
 void client_close_cb (fa_http_client_t *client) {
-    free(client);
+    uv_shutdown_t *sd = malloc(sizeof(uv_shutdown_t));
+
+    sd->data = client;
+
+    fa_http_client_shutdown(sd, client, *free_cb);
+
     puts("Stream closed");
 }
 
@@ -55,7 +72,7 @@ int on_message_complete (llhttp_t* parser) {
 }
 
 void create_client () {
-    const char* url_raw = "https://www.example.com";
+    const char* url_raw = "https://www.example.com/";
 
     uv_loop_t *loop = uv_default_loop();
 

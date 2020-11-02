@@ -103,8 +103,6 @@ static void fa__http_client_alloc_cb (
 static void fa__http_client_read_cb (uv_stream_t *tcp, ssize_t nread, const uv_buf_t * buf) {
     fa_http_client_t *client = tcp->data;
 
-    ssize_t parsed;
-
     if (nread > 0) {
         llhttp_errno_t err = llhttp_execute(&client->parser, buf->base, nread);
         if (err != HPE_OK) {
@@ -792,7 +790,7 @@ uv_buf_t *fa_http_request_header_with_path (fa_http_request_t *req, fa_url_path_
         if (userinfo_len > 0) {
             // add basic auth
             gnutls_datum_t data, result;
-            data.data = path->userinfo;
+            data.data = (unsigned char*)path->userinfo;
             data.size = userinfo_len;
             if (gnutls_base64_encode2(&data, &result) != GNUTLS_E_SUCCESS) goto skip_auth;
             

@@ -53,3 +53,10 @@ These are goals I'm setting for myself before I start with the project, so they 
 - [ ] Message parser (for commands)
 - [ ] Handle timeout - Timeout thread if message isn't handled within set time
 - [ ] Logger
+
+# Debug
+
+```
+gcc -I./include -I./deps/llhttp/build src/http.c src/test.c src/url.c src/url_parser.c deps/llhttp/build/libllhttp.a -luv -lgnutls -o test
+valgrind --leak-check=full --show-reachable=no --track-origins=yes --verbose --log-file=valgrind-out.txt ./test
+```
