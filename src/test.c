@@ -4,9 +4,13 @@
 #include <string.h>
 
 int on_body_recv (llhttp_t* parser, const char *at, size_t length) {
-    fwrite(at, length, sizeof(char), stdout);
+    // fwrite(at, length, sizeof(char), stdout);
 
     return 0;
+}
+
+void on_header (fa_http_client_t *client, fa_http_header_t *header) {
+    printf("HEADER\n%s: %s\n", header->field, header->value);
 }
 
 const char* request = "GET / HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: bazcal/3.0\r\nConnection: close\r\n\r\n";
@@ -59,6 +63,7 @@ int main () {
 
     client.parser_settings.on_body = *on_body_recv;
     client.parser_settings.on_message_complete = *on_message_complete;
+    client.header_cb = *on_header;
 
     fa_http_client_set_url(&client, url_raw);
 

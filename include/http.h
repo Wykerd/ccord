@@ -15,6 +15,16 @@ extern "C" {
 
 #define FA_HTTPS_BUF_LEN 1024
 
+typedef struct fa_http_header_s {
+    char* field;
+    char* value;
+} fa_http_header_t;
+
+typedef struct fa_http_headers_s {
+    fa_http_header_t **headers;
+    size_t len;
+} fa_http_headers_t;
+
 typedef struct fa_https_client_s {
     gnutls_session_t session;
     gnutls_certificate_credentials_t xcred;
@@ -47,6 +57,8 @@ typedef struct fa_http_client_s {
     void* err_cb;
     void* close_cb;
     void* upgrade_cb;
+    void* header_cb; // called when a new header is parsed
+    fa_http_header_t current_header; // the current header being parsed.
     /* URL */
     fa_url_t *url;
     /* Data */
@@ -86,9 +98,11 @@ typedef void (*fa_http_client_close_cb_t)(fa_http_client_t *client);
 
 typedef void (*fa_http_client_upgrade_cb_t)(fa_http_client_t *client);
 
+typedef void (*fa_http_client_header_cb_t)(fa_http_client_t *client, fa_http_header_t *header);
+
 int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client);
 void fa_http_client_shutdown (uv_shutdown_t *shutdown, fa_http_client_t *client, uv_shutdown_cb cb);
-int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb);
+void fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb);
 int fa_http_client_write (fa_http_client_t *client, uv_buf_t *buf, fa_http_client_write_cb_t write_cb);
 void fa_http_client_set_url (fa_http_client_t *client, const char* url);
 

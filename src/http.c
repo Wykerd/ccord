@@ -17,6 +17,29 @@ typedef struct fa__http_client_tls_write_data_s {
     uv_buf_t *buf;
 } fa__http_client_tls_write_data_t;
 
+static int fa__http_header_field_cb (llhttp_t *parser, const char *at, size_t length) {
+    fa_http_client_t *client = parser->data;
+
+    free(client->current_header.field);
+    client->current_header.field = malloc(length + sizeof(char));
+    memcpy(client->current_header.field, at, length);
+    client->current_header.field[length] = 0;
+    return 0;
+}
+
+static int fa__http_header_value_cb (llhttp_t *parser, const char *at, size_t length) {
+    fa_http_client_t *client = parser->data;
+
+    free(client->current_header.value);
+    client->current_header.value = malloc(length + sizeof(char));
+    memcpy(client->current_header.value, at, length);
+    client->current_header.value[length] = 0;
+
+    (*(fa_http_client_header_cb_t)client->header_cb)(client, &client->current_header);
+
+    return 0;
+}
+
 int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client) {
     client->loop = loop;
     client->https = NULL;
@@ -26,6 +49,18 @@ int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client) {
     client->parser.data = client;
     client->settings.keep_alive = 0;
     client->settings.keep_alive_secs = 1;
+    // Clear the callbacks
+    client->connect_cb = NULL;
+    client->err_cb = NULL;
+    client->close_cb = NULL;
+    client->upgrade_cb = NULL;
+    client->header_cb = NULL;
+    // Initialize the current_header
+    client->current_header.field = calloc(sizeof(char), 1);
+    client->current_header.value = calloc(sizeof(char), 1);
+    // Header parsing
+    client->parser_settings.on_header_field = *fa__http_header_field_cb;
+    client->parser_settings.on_header_value = *fa__http_header_value_cb;
     return 0;
 };
 
@@ -45,6 +80,9 @@ void fa_http_client_shutdown (uv_shutdown_t *shutdown, fa_http_client_t *client,
         fa_free_url(client->url);
         client->url = NULL;
     }
+
+    free(client->current_header.field);
+    free(client->current_header.value);
 
     uv_shutdown(shutdown, (uv_stream_t *)&client->tcp, cb);
 };
@@ -205,6 +243,8 @@ static void fa__http_client_tls_handshake_cb (uv_idle_t* handle) {
         };
 
         (*(fa_http_client_connect_cb_t)client->connect_cb)(client, &error);
+
+        uv_idle_stop(handle);
 
         return;
     } else {
@@ -385,7 +425,7 @@ static void fa__http_client_getaddrinfo_cb (
     uv_freeaddrinfo(res);
 }
 
-int fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb) {
+void fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb_t connect_cb, fa_http_client_err_cb_t err_cb, fa_http_client_close_cb_t close_cb) {
     client->connect_cb = connect_cb;
     client->err_cb = err_cb;
     client->close_cb = close_cb;
