@@ -9,7 +9,7 @@
 
 fa_url_t *fa_parse_url (const char* buf, size_t buflen) {
     fa_url_t *url;
-    url = malloc(sizeof(fa_url_t *));
+    url = malloc(sizeof(fa_url_t));
 
     struct http_parser_url u;
     http_parser_url_init(&u);

@@ -17,11 +17,13 @@ extern "C" {
 
 typedef struct fa_http_header_s {
     char* field;
+    size_t field_len;
     char* value;
+    size_t value_len;
 } fa_http_header_t;
 
 typedef struct fa_http_headers_s {
-    fa_http_header_t **headers;
+    fa_http_header_t **base;
     size_t len;
 } fa_http_headers_t;
 
@@ -67,7 +69,14 @@ typedef struct fa_http_client_s {
     fa_http_client_settings_t settings;
 } fa_http_client_t;
 
+typedef struct fa_http_request_s {
+    fa_http_headers_t headers;
+    char* method;
+    fa_http_client_t *client;
+} fa_http_request_t;
+
 enum fa_http_client_error_type {
+    FA_HC_E_OK,
     FA_HC_E_GNUTLS,
     FA_HC_E_UVREADSTART,
     FA_HC_E_UVREAD,
@@ -106,6 +115,23 @@ void fa_http_client_connect (fa_http_client_t *client, fa_http_client_connect_cb
 int fa_http_client_write (fa_http_client_t *client, uv_buf_t *buf, fa_http_client_write_cb_t write_cb);
 void fa_http_client_set_url (fa_http_client_t *client, const char* url);
 
+typedef enum fa_http_request_err {
+    FA_HR_E_OK,
+    FA_HR_E_FIELD_NAME, // INVALID FIELD NAME
+} fa_http_request_err_t;
+
+void fa_http_headers_init (fa_http_headers_t *headers);
+fa_http_request_err_t fa_http_headers_push_buf (fa_http_headers_t *headers, uv_buf_t *field, uv_buf_t *value);
+fa_http_request_err_t fa_http_headers_push (fa_http_headers_t *headers, char* field, char* value);
+void fa_http_headers_free (fa_http_headers_t *headers);
+
+fa_http_request_t *fa_http_request_init (fa_http_client_t *client, const char* method);
+uv_buf_t *fa_http_request_header_with_path (fa_http_request_t *req, fa_url_path_t *path, int include_content_type);
+uv_buf_t *fa_http_request_header (fa_http_request_t *req, int include_content_type);
+uv_buf_t *fa_http_request_serialize_with_path (fa_http_request_t *req, uv_buf_t *body, fa_url_path_t *path);
+uv_buf_t *fa_http_request_serialize (fa_http_request_t *req, uv_buf_t *body);
+void fa_http_request_serialize_free (uv_buf_t *buf);
+void fa_http_request_free (fa_http_request_t *req);
 
 #ifdef __cplusplus
 }

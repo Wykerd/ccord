@@ -11,12 +11,10 @@ int on_body_recv (llhttp_t* parser, const char *at, size_t length) {
 
 void on_header (fa_http_client_t *client, fa_http_header_t *header) {
     printf("HEADER\n%s: %s\n", header->field, header->value);
-}
-
-const char* request = "GET / HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: bazcal/3.0\r\nConnection: close\r\n\r\n";
+};
 
 void write_cb (fa_http_client_t *client, fa_http_client_err_t *error) {
-    free(client->data);
+    fa_http_request_serialize_free(client->data);
     puts("WROTE DATA");
 }
 
@@ -24,10 +22,15 @@ void client_connect_cb (fa_http_client_t *client, fa_http_client_err_t *err) {
     if (err != NULL) printf("Status %d\n", err->code);
     else puts("Connected");
 
-    uv_buf_t *resbuf = malloc(sizeof(uv_buf_t));
-    
-    resbuf->base = (char *)request;
-    resbuf->len = strlen(request);
+    fa_http_request_t *req = fa_http_request_init(client, "GET");
+
+    fa_http_headers_push(&req->headers, "Connection", "close");
+
+    uv_buf_t *resbuf = fa_http_request_serialize(req, NULL);
+
+    fwrite(resbuf->base, resbuf->len, sizeof(char), stdout);
+
+    fa_http_request_free(req);
 
     client->data = resbuf;
 

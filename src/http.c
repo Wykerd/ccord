@@ -24,6 +24,7 @@ static int fa__http_header_field_cb (llhttp_t *parser, const char *at, size_t le
     client->current_header.field = malloc(length + sizeof(char));
     memcpy(client->current_header.field, at, length);
     client->current_header.field[length] = 0;
+    client->current_header.field_len = length;
     return 0;
 }
 
@@ -34,6 +35,7 @@ static int fa__http_header_value_cb (llhttp_t *parser, const char *at, size_t le
     client->current_header.value = malloc(length + sizeof(char));
     memcpy(client->current_header.value, at, length);
     client->current_header.value[length] = 0;
+    client->current_header.value_len = length;
 
     (*(fa_http_client_header_cb_t)client->header_cb)(client, &client->current_header);
 
@@ -58,6 +60,8 @@ int fa_http_client_init (uv_loop_t *loop, fa_http_client_t *client) {
     // Initialize the current_header
     client->current_header.field = calloc(sizeof(char), 1);
     client->current_header.value = calloc(sizeof(char), 1);
+    client->current_header.field_len = 0;
+    client->current_header.value_len = 0;
     // Header parsing
     client->parser_settings.on_header_field = *fa__http_header_field_cb;
     client->parser_settings.on_header_value = *fa__http_header_value_cb;
@@ -562,3 +566,330 @@ int fa_http_client_write (fa_http_client_t *client, uv_buf_t *buf, fa_http_clien
 
     return 0;
 }
+
+/* Tokens as defined by rfc 2616. Also lowercases them.
+ *        token       = 1*<any CHAR except CTLs or separators>
+ *     separators     = "(" | ")" | "<" | ">" | "@"
+ *                    | "," | ";" | ":" | "\" | <">
+ *                    | "/" | "[" | "]" | "?" | "="
+ *                    | "{" | "}" | SP | HT
+ */
+static const char tokens[256] = {
+/*   0 nul    1 soh    2 stx    3 etx    4 eot    5 enq    6 ack    7 bel  */
+        0,       0,       0,       0,       0,       0,       0,       0,
+/*   8 bs     9 ht    10 nl    11 vt    12 np    13 cr    14 so    15 si   */
+        0,       0,       0,       0,       0,       0,       0,       0,
+/*  16 dle   17 dc1   18 dc2   19 dc3   20 dc4   21 nak   22 syn   23 etb */
+        0,       0,       0,       0,       0,       0,       0,       0,
+/*  24 can   25 em    26 sub   27 esc   28 fs    29 gs    30 rs    31 us  */
+        0,       0,       0,       0,       0,       0,       0,       0,
+/*  32 sp    33  !    34  "    35  #    36  $    37  %    38  &    39  '  */
+       ' ',     '!',      0,      '#',     '$',     '%',     '&',    '\'',
+/*  40  (    41  )    42  *    43  +    44  ,    45  -    46  .    47  /  */
+        0,       0,      '*',     '+',      0,      '-',     '.',      0,
+/*  48  0    49  1    50  2    51  3    52  4    53  5    54  6    55  7  */
+       '0',     '1',     '2',     '3',     '4',     '5',     '6',     '7',
+/*  56  8    57  9    58  :    59  ;    60  <    61  =    62  >    63  ?  */
+       '8',     '9',      0,       0,       0,       0,       0,       0,
+/*  64  @    65  A    66  B    67  C    68  D    69  E    70  F    71  G  */
+        0,      'a',     'b',     'c',     'd',     'e',     'f',     'g',
+/*  72  H    73  I    74  J    75  K    76  L    77  M    78  N    79  O  */
+       'h',     'i',     'j',     'k',     'l',     'm',     'n',     'o',
+/*  80  P    81  Q    82  R    83  S    84  T    85  U    86  V    87  W  */
+       'p',     'q',     'r',     's',     't',     'u',     'v',     'w',
+/*  88  X    89  Y    90  Z    91  [    92  \    93  ]    94  ^    95  _  */
+       'x',     'y',     'z',      0,       0,       0,      '^',     '_',
+/*  96  `    97  a    98  b    99  c   100  d   101  e   102  f   103  g  */
+       '`',     'a',     'b',     'c',     'd',     'e',     'f',     'g',
+/* 104  h   105  i   106  j   107  k   108  l   109  m   110  n   111  o  */
+       'h',     'i',     'j',     'k',     'l',     'm',     'n',     'o',
+/* 112  p   113  q   114  r   115  s   116  t   117  u   118  v   119  w  */
+       'p',     'q',     'r',     's',     't',     'u',     'v',     'w',
+/* 120  x   121  y   122  z   123  {   124  |   125  }   126  ~   127 del */
+       'x',     'y',     'z',      0,      '|',      0,      '~',       0 };
+
+#define TOKEN(c) ((c == ' ') ? 0 : tokens[(unsigned char)c])
+
+static const char auth[] = "authorization";
+static const char host[] = "host";
+static const char content_type[] = "content-type";
+static const char http_version[] = "HTTP/1.1";
+
+static const uv_buf_t content_type_header[2] = {
+    {
+        .base = "Content-Type",
+        .len = 12
+    },
+    {
+        .base = "application/octet-stream",
+        .len = 24
+    }
+};
+
+static const uv_buf_t content_length_header = {
+    .base = "Content-Length",
+    .len = 14
+};
+
+void fa_http_headers_init (fa_http_headers_t *headers) {
+    headers->base = malloc(sizeof(fa_http_header_t *));
+    headers->len = 0;
+};
+
+fa_http_request_err_t fa_http_headers_push_buf (fa_http_headers_t *headers, uv_buf_t *field, uv_buf_t *value) {
+    headers->base = realloc(headers->base, sizeof(fa_http_header_t *) * ++headers->len);
+    
+    headers->base[headers->len - 1] = malloc(sizeof(fa_http_header_t));
+
+    headers->base[headers->len - 1]->field = malloc(sizeof(char) * (field->len + 1));
+    headers->base[headers->len - 1]->value = malloc(sizeof(char) * (value->len + 1));
+    headers->base[headers->len - 1]->field_len = field->len;
+    headers->base[headers->len - 1]->value_len = value->len;
+
+    for (size_t i = 0; i < field->len; i++) {
+        char tok = TOKEN(field->base[i]);
+        if (!tok) return FA_HR_E_FIELD_NAME;
+        headers->base[headers->len - 1]->field[i] = field->base[i];
+    };
+
+    headers->base[headers->len - 1]->field[field->len] = 0;
+
+    // TODO: Field Value validation
+    memcpy(headers->base[headers->len - 1]->value, value->base, value->len);
+    headers->base[headers->len - 1]->value[value->len] = 0;
+
+    return FA_HR_E_OK;
+};
+
+fa_http_request_err_t fa_http_headers_push (fa_http_headers_t *headers, char* field, char* value) {
+    uv_buf_t field_buf = {
+        .base = field,
+        .len = strlen(field)
+    };
+
+    uv_buf_t value_buf = {
+        .base = value,
+        .len = strlen(value)
+    };
+    
+    return fa_http_headers_push_buf(headers, &field_buf, &value_buf);
+}
+
+void fa_http_headers_free (fa_http_headers_t *headers) {
+    for (size_t i = 0; i < headers->len; i++) {
+        free(headers->base[i]->field);
+        free(headers->base[i]->value);
+        free(headers->base[i]);
+    }
+    free(headers->base);
+}
+
+fa_http_request_t *fa_http_request_init (fa_http_client_t *client, const char* method) {
+    fa_http_request_t *req = malloc(sizeof(fa_http_request_t));
+
+    fa_http_headers_init(&req->headers);
+
+    size_t method_len = strlen(method);
+    req->method = malloc(sizeof(char) * (method_len + 1));
+    memcpy(req->method, method, method_len);
+    req->method[method_len] = 0;
+
+    req->client = client;
+
+    return req;
+};
+
+uv_buf_t *fa_http_request_header_with_path (fa_http_request_t *req, fa_url_path_t *path, int include_content_type) {
+    int has_host = 0, has_auth = 0, has_content_type = !include_content_type;
+
+    uv_buf_t *header = malloc(sizeof(uv_buf_t));
+
+    // Request line
+    size_t method_len = strlen(req->method);
+    size_t path_len = strlen(path->path);
+    size_t query_len = strlen(path->query);
+
+    // Request-Line   = Method SP Request-URI SP HTTP-Version CRLF
+    size_t request_line_len = method_len + 1 + (path_len ? path_len : 1) + (query_len ? query_len + 1 : 0) + 1 + 8 + 2;
+
+    size_t header_len = request_line_len;
+
+    // First pass calculate size + has host etc
+    for (size_t i = 0; i < req->headers.len; i++) {
+        header_len += req->headers.base[i]->field_len + 2 + req->headers.base[i]->value_len + 2;
+    };
+
+    // the header terminator CRLF
+    header_len += 2;
+
+    // allocate the memory
+    header->len = header_len;
+    header->base = malloc(header->len);
+
+    size_t cursor = 0;
+
+    // Add the request line
+    memcpy(header->base, req->method, method_len);
+    cursor += method_len;
+    header->base[cursor++] = ' ';
+    memcpy(header->base + cursor, path_len ? path->path : "/", (path_len ? path_len : 1));
+    cursor += path_len ? path_len : 1;
+    if (query_len) {
+        header->base[cursor++] = '?';
+        memcpy(header->base + cursor, path->query, query_len);
+    };
+    header->base[cursor++] = ' ';
+    memcpy(header->base + cursor, http_version, 8);
+    cursor += 8;
+    header->base[cursor++] = '\r';
+    header->base[cursor++] = '\n';
+
+    // Add the headers
+    for (size_t i = 0; i < req->headers.len; i++) {
+        int is_auth = (req->headers.base[i]->field_len == 13) && (!has_auth), 
+            is_host = (req->headers.base[i]->field_len == 4) && (!has_host),
+            is_content_length = (req->headers.base[i]->field_len == 12) && (!has_content_type);
+        
+        for (size_t x = 0; x < req->headers.base[i]->field_len; x++) {
+            if (is_auth) is_auth = TOKEN(req->headers.base[i]->field[x]) == auth[x]; 
+            if (is_host) is_host = TOKEN(req->headers.base[i]->field[x]) == host[x];
+            if (is_content_length) is_content_length = TOKEN(req->headers.base[i]->field[x]) == content_type[x];
+            header->base[cursor++] = req->headers.base[i]->field[x];
+        };
+
+        has_host = has_host || is_host;
+        has_auth = has_auth || is_auth;
+        has_content_type = has_content_type || is_content_length;
+
+        header->base[cursor++] = ':';
+        header->base[cursor++] = ' ';
+        memcpy(header->base + cursor, req->headers.base[i]->value, req->headers.base[i]->value_len);
+        cursor += req->headers.base[i]->value_len;
+        header->base[cursor++] = '\r';
+        header->base[cursor++] = '\n';
+    };
+
+    size_t orig_header_len = req->headers.len;
+
+    if (!has_host) {
+        uv_buf_t field = {
+            .base = "Host",
+            .len = 4
+        };
+
+        uv_buf_t value = {
+            .base = req->client->url->host,
+            .len = strlen(req->client->url->host)
+        };
+
+        fa_http_headers_push_buf(&req->headers, &field, &value);
+
+        header_len += field.len + 2 + value.len + 2;
+    };
+
+    if (!has_auth) {
+        size_t userinfo_len = strlen(path->userinfo);
+        if (userinfo_len > 0) {
+            // add basic auth
+            gnutls_datum_t data, result;
+            data.data = path->userinfo;
+            data.size = userinfo_len;
+            if (gnutls_base64_encode2(&data, &result) != GNUTLS_E_SUCCESS) goto skip_auth;
+            
+            uv_buf_t field = {
+                .base = "Authorization",
+                .len = 13
+            };
+
+            uv_buf_t value;
+
+            value.len = (sizeof(char) * 6) + result.size;
+            value.base = malloc(value.len);
+            memcpy(value.base, "Basic ", sizeof(char) * 6);
+            memcpy(value.base + (sizeof(char) * 6), result.data, result.size);
+
+            fa_http_headers_push_buf(&req->headers, &field, &value);
+
+            gnutls_free(&result);
+            free(value.base);
+
+            header_len += field.len + 2 + value.len + 2;
+        };
+    };
+
+skip_auth:
+
+    // If BODY != NULL this field will be set application/octet-stream as to rfc2616 spec
+    if (!has_content_type) {
+        fa_http_headers_push_buf(&req->headers, (uv_buf_t *)&content_type_header[0], (uv_buf_t *)&content_type_header[1]);
+        header_len += content_type_header[0].len + 2 + content_type_header[1].len + 2;
+    };
+
+    size_t additional_len = header_len - header->len;
+
+    if (additional_len) {
+        header->len = header_len;
+        header->base = realloc(header->base, header->len);
+
+        for (size_t i = orig_header_len; i < req->headers.len; i++) {
+            memcpy(header->base + cursor, req->headers.base[i]->field, req->headers.base[i]->field_len);
+            cursor += req->headers.base[i]->field_len;
+            header->base[cursor++] = ':';
+            header->base[cursor++] = ' ';
+            memcpy(header->base + cursor, req->headers.base[i]->value, req->headers.base[i]->value_len);
+            cursor += req->headers.base[i]->value_len;
+            header->base[cursor++] = '\r';
+            header->base[cursor++] = '\n';
+        }
+    };
+
+    header->base[cursor++] = '\r';
+    header->base[cursor++] = '\n';
+
+    return header;
+};
+
+uv_buf_t *fa_http_request_header (fa_http_request_t *req, int include_content_type) {
+    return fa_http_request_header_with_path(req, (fa_url_path_t *)req->client->url, include_content_type);
+};
+
+uv_buf_t *fa_http_request_serialize_with_path (fa_http_request_t *req, uv_buf_t *body, fa_url_path_t *path) {
+    if ((body != NULL) && body->len) {
+        uv_buf_t value;
+        value.len = snprintf(NULL, 0, "%zu", body->len);
+        value.base = malloc(value.len);
+        snprintf(value.base, value.len, "%zu", body->len);
+
+        fa_http_headers_push_buf(&req->headers, (uv_buf_t *)&content_length_header, &value);
+
+        free(value.base);
+    }
+
+    uv_buf_t *serial = fa_http_request_header_with_path(req, (fa_url_path_t *)req->client->url, body != NULL);
+
+    if ((body != NULL) && body->len) {
+        size_t cursor = serial->len;
+        serial->len += body->len;
+        serial->base = realloc(serial->base, serial->len);
+        memcpy(serial->base + cursor, body->base, body->len);
+    };
+
+    return serial;
+};
+
+uv_buf_t *fa_http_request_serialize (fa_http_request_t *req, uv_buf_t *body) {
+    return fa_http_request_serialize_with_path(req, body, (fa_url_path_t *)req->client->url);
+};
+
+void fa_http_request_serialize_free (uv_buf_t *buf) {
+    free(buf->base);
+    free(buf);
+    buf = NULL;
+};
+
+void fa_http_request_free (fa_http_request_t *req) {
+    fa_http_headers_free(&req->headers);
+    free(req->method);
+    free(req);
+    req = NULL;
+};
