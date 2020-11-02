@@ -42,6 +42,7 @@ void client_err_cb (fa_http_client_t *client, fa_http_client_err_t *err) {
 }
 
 void client_close_cb (fa_http_client_t *client) {
+    free(client);
     puts("Stream closed");
 }
 
@@ -53,24 +54,33 @@ int on_message_complete (llhttp_t* parser) {
     return 0;
 }
 
-int main () {
-    gnutls_global_init();
-
+void create_client () {
     const char* url_raw = "https://www.example.com";
 
     uv_loop_t *loop = uv_default_loop();
 
-    fa_http_client_t client;
+    fa_http_client_t *client = malloc(sizeof(fa_http_client_t));
 
-    fa_http_client_init(loop, &client);
+    fa_http_client_init(loop, client);
 
-    client.parser_settings.on_body = *on_body_recv;
-    client.parser_settings.on_message_complete = *on_message_complete;
-    client.header_cb = *on_header;
+    client->parser_settings.on_body = *on_body_recv;
+    client->parser_settings.on_message_complete = *on_message_complete;
+    client->header_cb = *on_header;
 
-    fa_http_client_set_url(&client, url_raw);
+    fa_http_client_set_url(client, url_raw);
 
-    fa_http_client_connect (&client, *client_connect_cb, *client_err_cb, *client_close_cb);
+    fa_http_client_connect (client, *client_connect_cb, *client_err_cb, *client_close_cb);
+};
+
+int main () {
+    gnutls_global_init();
+
+    uv_loop_t *loop = uv_default_loop();
+
+    create_client();
+    create_client();
+    create_client();
+    create_client();
 
     uv_run(loop, UV_RUN_DEFAULT);
 }
